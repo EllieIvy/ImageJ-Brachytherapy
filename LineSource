@@ -1,22 +1,21 @@
-//------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 // ImageJ Macro: Brachytherapy line source film analysis
 //
 // Ellie Ivy 18/06/2025
 //
 // Input: Scanned autoradiograph of Flexitron source along a straight source path (TIF File)
 //
-// Description
-// User draws a line across the source path
+// Description:
+// User draws a line across the source path, starting at the end of the applicator
 // Macro plots a profile along this path, smooths the profile and plots the maxima
+// Provides a table showing the dead space and distance between dwells
 //
 // Suggested Improvements
-// Return results in table format, including 'dead space' and 'DP 1', etc.
-// Return absolute position of dwells and distance between dwells
 // Adapt this to specifically fit the oesophagus jig
 // Test out particle detection as alternative method
-//------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 
 // Ask user to select a file, open the file
  	path = File.openDialog("Choose a File"); 
@@ -33,7 +32,7 @@
 // Set pixel size
 	pix_size_mm = 25.4/dpi;
 
-// Prompt user to daw a line profile through the source path, starting at the end of the catheter
+// Prompt user to daw a line profile through the source path, starting at the end of the applicator
 	setTool("line");
 	while (selectionType != 5) {	
 	waitForUser("Draw a line through the centre of the source path, starting from the end of the applicator, then click OK to continue.");
@@ -48,51 +47,78 @@
 // Smooth line profile
 	smoothedProfile = smoothProfile(profile, 5);
 
-// Find line profile maxima
+// Find line profile maxima and sort them in order from the end of the applicator
 	maxLocs = Array.findMaxima(smoothedProfile, 800);
 	Array.sort(maxLocs);
 
-// Print and mark maxima
+// Find positions of maxima along the line
 	getLine(x1, y1, x2, y2, lineWidth);
 	dx = (x2 - x1) / profile.length;
 	dy = (y2 - y1) / profile.length;
 	
 	makePoint(0, 0);
 
+// Clear image overlay
 	Overlay.clear();
 
-	for (i = 0; i < maxLocs.length; i++) {
-    		x = maxLocs[i] * pix_size_mm;
-    		print("Max " + (i + 1) + " = " + x + " mm");
+// Clear any previous results
+	run("Clear Results");
 
-    		px = x1 + dx * maxLocs[i];
-    		py = y1 + dy * maxLocs[i];
+	previous_distance = 0;
+
+// Loop through each maximum
+// Define dead space (distance of first maximum from beginning of line)
+// Define dwell spacings (distance between maxima)
+	for (i = 0; i < maxLocs.length; i++) {
+    		distance_mm = maxLocs[i] * pix_size_mm;
+
+    		if (i == 0) {
+        		dead_space_mm = distance_mm;
+			spacing_mm = "";
+   		} 
+		else {
+       			dead_space_mm = "";
+			spacing_mm = distance_mm - previous_distance;
+    		}
+
+    	previous_distance = distance_mm;
+
+// Overlay the maxima positions on the image
+    	px = x1 + dx * maxLocs[i];
+    	py = y1 + dy * maxLocs[i];
 
     	makePoint(px, py, "small red cross");
-   	Overlay.addSelection();
+    	Overlay.addSelection();
+
+// Set up results table
+	setResult("Distance (mm)", i, distance_mm);    	
+	setResult("Dead Space (mm)", i, dead_space_mm);
+    	setResult("Dwell Spacing (mm)", i, spacing_mm);
 	}
 
-//------------------------------------------------------------------------------------
+//Print results table
+	updateResults();
 
+//------------------------------------------------------------------------------------------
 // Smooth profile function - uses moving average
 	function smoothProfile(profile, windowSize) {
     		half = floor(windowSize / 2);
     		smoothed = newArray(profile.length);
 
-    	for (i = 0; i < profile.length; i++) {
-        	sum = 0;
-        	count = 0;
+    		for (i = 0; i < profile.length; i++) {
+        		sum = 0;
+        		count = 0;
 
-        	for (j = -half; j <= half; j++) {
-            	index = i + j;
-            	if (index >= 0 && index < profile.length) {
-                	sum += profile[index];
-                	count++;
-            	}
-        	}
+        		for (j = -half; j <= half; j++) {
+            			index = i + j;
+            			if (index >= 0 && index < profile.length) {
+                			sum += profile[index];
+                			count++;
+            			}
+        		}
 
-        smoothed[i] = sum / count;
-    }
+        		smoothed[i] = sum / count;
+   		 }
 
-    return smoothed;
-}
+    	return smoothed;
+	}
